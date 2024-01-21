@@ -1,0 +1,30 @@
+[package]
+name = "axum-content-negotiation"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+axum = "*"
+tower = "*"
+serde = "*"
+erased-serde = "*"
+futures = "*"
+
+serde_json = { version = "*", optional = true }
+simd-json = { version = "*", optional = true }
+
+cbor4ii = { version = "*", optional = true, features = ["serde1"] }
+
+tracing = "*"
+
+[features]
+default = ["json"]
+json = ["serde_json"]
+simd-json = ["dep:simd-json", "serde_json"]
+cbor = ["cbor4ii"]
+
+[dev-dependencies]
+http-body-util = "0.1.0"
+tokio = { version = "1.0", features = ["full"] }
+axum = { version = "*", features = ["macros"] }
+serde = { version = "*", features = ["derive"] }
