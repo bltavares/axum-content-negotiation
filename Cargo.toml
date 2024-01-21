@@ -18,10 +18,12 @@ cbor4ii = { version = "*", optional = true, features = ["serde1"] }
 tracing = "*"
 
 [features]
-default = ["json"]
+default = ["cbor", "simd-json", "default-json"]
 json = ["serde_json"]
 simd-json = ["dep:simd-json", "serde_json"]
 cbor = ["cbor4ii"]
+default-json = []
+default-cbor = []
 
 [dev-dependencies]
 http-body-util = "0.1.0"

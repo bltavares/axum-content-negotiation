@@ -20,13 +20,16 @@ use tower::Service;
 #[derive(Debug, Clone)]
 pub struct Negotiate<T>(T);
 
-#[cfg(any(feature = "json", feature = "simd-json"))]
+#[cfg(feature = "default-json")]
 /// Default to application/json if the request does not have any accept header or uses */* when json is enabled
 static DEFAULT_CONTENT_TYPE_VALUE: &str = "application/json";
 
-#[cfg(all(feature = "cbor", not(any(feature = "json", feature = "simd-json"))))]
+#[cfg(feature = "default-cbor")]
 /// Default to application/cbor if the request does not have any accept header or uses */* when json is not enabled
 static DEFAULT_CONTENT_TYPE_VALUE: &str = "application/cbor";
+
+#[cfg(not(any(feature = "default-json", feature = "default-cbor")))]
+compile_error!("A default-* feature must be enabled for fallback encoding");
 
 static DEFAULT_CONTENT_TYPE: HeaderValue = HeaderValue::from_static(DEFAULT_CONTENT_TYPE_VALUE);
 
@@ -256,6 +259,9 @@ where
             if parts.status == StatusCode::UNSUPPORTED_MEDIA_TYPE {
                 parts.status = StatusCode::OK;
             }
+            parts
+                .headers
+                .insert(CONTENT_TYPE, HeaderValue::from_static(encoding));
 
             Ok(Response::from_parts(parts, body.into()))
         })
@@ -266,219 +272,604 @@ where
 mod test {
     use crate::Negotiate;
 
-    use axum::http::header::CONTENT_TYPE;
-    use axum::{http::Request, response::IntoResponse, routing::post, Router};
+    use axum::{
+        body::Body,
+        http::{
+            header::{ACCEPT, CONTENT_TYPE},
+            Request, StatusCode,
+        },
+        response::IntoResponse,
+        routing::post,
+        Router,
+    };
     use http_body_util::BodyExt;
     use tower::ServiceExt;
+
+    use crate::NegotiateLayer;
 
     #[derive(Debug, serde::Serialize, serde::Deserialize)]
     struct Example {
         message: String,
     }
 
+    mod general {
+        use super::*;
+
+        mod input {
+            use super::*;
+
+            #[tokio::test]
+            async fn test_does_not_process_handler_if_content_type_is_not_supported() {
+                #[axum::debug_handler]
+                async fn handler(_: Negotiate<Example>) -> impl IntoResponse {
+                    unimplemented!("This should not be called")
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .header(CONTENT_TYPE, "non-supported")
+                            .method("POST")
+                            .body(Body::from("really-cool-format"))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 406);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Invalid content type on request"
+                );
+            }
+        }
+
+        mod output {
+            use super::*;
+
+            #[tokio::test]
+            async fn test_inform_error_when_misconfigured() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new().route("/", post(handler));
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 415);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Misconfigured service layer"
+                );
+            }
+
+            #[tokio::test]
+            async fn test_does_not_process_handler_if_accept_is_not_supported() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    unimplemented!("This should not be called")
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .header(ACCEPT, "non-supported")
+                            .method("POST")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 406);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Invalid content type on request"
+                );
+            }
+        }
+    }
+
     #[cfg(any(feature = "simd-json", feature = "json"))]
     mod json {
-        use axum::{body::Body, http::StatusCode};
         use serde_json::json;
-
-        use crate::NegotiateLayer;
 
         use super::*;
 
-        #[tokio::test]
-        async fn test_can_read_input_without_accept_by_default() {
-            #[axum::debug_handler]
-            async fn handler(Negotiate(input): Negotiate<Example>) -> impl IntoResponse {
-                format!("Hello, {}!", input.message)
+        mod input {
+            use super::*;
+
+            #[cfg(feature = "default-json")]
+            #[tokio::test]
+            async fn test_can_read_input_without_content_type_by_default() {
+                #[axum::debug_handler]
+                async fn handler(Negotiate(input): Negotiate<Example>) -> impl IntoResponse {
+                    format!("Hello, {}!", input.message)
+                }
+
+                let app = Router::new().route("/", post(handler));
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .body(json!({ "message": "test" }).to_string())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Hello, test!"
+                );
             }
 
-            let app = Router::new().route("/", post(handler));
+            #[tokio::test]
+            async fn test_can_read_input_with_specified_header() {
+                #[axum::debug_handler]
+                async fn handler(Negotiate(input): Negotiate<Example>) -> impl IntoResponse {
+                    format!("Hello, {}!", input.message)
+                }
 
-            let response = app
-                .oneshot(
-                    Request::builder()
-                        .uri("/")
-                        .method("POST")
-                        .body(json!({ "message": "test" }).to_string())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
+                let app = Router::new().route("/", post(handler));
 
-            assert_eq!(response.status(), 200);
-            assert_eq!(
-                response.into_body().collect().await.unwrap().to_bytes(),
-                "Hello, test!"
-            );
-        }
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .header(CONTENT_TYPE, "application/json")
+                            .method("POST")
+                            .body(json!({ "message": "test" }).to_string())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
 
-        #[tokio::test]
-        async fn test_can_read_input_with_specified_header() {
-            #[axum::debug_handler]
-            async fn handler(Negotiate(input): Negotiate<Example>) -> impl IntoResponse {
-                format!("Hello, {}!", input.message)
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Hello, test!"
+                );
             }
 
-            let app = Router::new().route("/", post(handler));
+            #[tokio::test]
+            async fn test_does_not_accept_invalid_inputs() {
+                #[axum::debug_handler]
+                async fn handler(_: Negotiate<Example>) -> impl IntoResponse {
+                    unimplemented!("This should not be called")
+                }
 
-            let response = app
-                .oneshot(
-                    Request::builder()
-                        .uri("/")
-                        .header(CONTENT_TYPE, "application/json")
-                        .method("POST")
-                        .body(json!({ "message": "test" }).to_string())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
 
-            assert_eq!(response.status(), 200);
-            assert_eq!(
-                response.into_body().collect().await.unwrap().to_bytes(),
-                "Hello, test!"
-            );
-        }
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(CONTENT_TYPE, "application/json")
+                            .body(json!({ "not": true }).to_string())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
 
-        #[tokio::test]
-        async fn test_inform_error_when_misconfigured() {
-            #[axum::debug_handler]
-            async fn handler() -> impl IntoResponse {
-                Negotiate(Example {
-                    message: "Hello, test!".to_string(),
-                })
+                assert_eq!(response.status(), 400);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Malformed request body"
+                );
             }
-
-            let app = Router::new().route("/", post(handler));
-
-            let response = app
-                .oneshot(
-                    Request::builder()
-                        .uri("/")
-                        .header(CONTENT_TYPE, "application/json")
-                        .method("POST")
-                        .body(json!({ "message": "test" }).to_string())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-
-            assert_eq!(response.status(), 415);
-            assert_eq!(
-                response.into_body().collect().await.unwrap().to_bytes(),
-                "Misconfigured service layer"
-            );
         }
 
-        #[tokio::test]
-        async fn test_use_default_encoding_without_headers() {
-            #[axum::debug_handler]
-            async fn handler() -> impl IntoResponse {
-                Negotiate(Example {
-                    message: "Hello, test!".to_string(),
-                })
-            }
+        mod output {
+            use super::*;
 
-            let app = Router::new()
-                .route("/", post(handler))
-                .layer(NegotiateLayer);
-
-            let response = app
-                .oneshot(
-                    Request::builder()
-                        .uri("/")
-                        .method("POST")
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
-
-            assert_eq!(response.status(), 200);
-            assert_eq!(
-                response.into_body().collect().await.unwrap().to_bytes(),
-                json!({ "message": "Hello, test!" }).to_string()
-            );
-        }
-
-        #[tokio::test]
-        async fn test_retain_handler_status_code() {
-            #[axum::debug_handler]
-            async fn handler() -> impl IntoResponse {
-                (
-                    StatusCode::CREATED,
+            #[tokio::test]
+            async fn test_encode_as_requested() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
                     Negotiate(Example {
                         message: "Hello, test!".to_string(),
-                    }),
-                )
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "application/json")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/json"
+                );
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    json!({ "message": "Hello, test!" }).to_string()
+                );
             }
 
-            let app = Router::new()
-                .route("/", post(handler))
-                .layer(NegotiateLayer);
+            #[cfg(feature = "default-json")]
+            #[tokio::test]
+            async fn test_use_default_encoding_without_headers() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
 
-            let response = app
-                .oneshot(
-                    Request::builder()
-                        .uri("/")
-                        .method("POST")
-                        .body(Body::empty())
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
 
-            assert_eq!(response.status(), StatusCode::CREATED);
-            assert_eq!(
-                response.into_body().collect().await.unwrap().to_bytes(),
-                json!({ "message": "Hello, test!" }).to_string()
-            );
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/json"
+                );
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    json!({ "message": "Hello, test!" }).to_string()
+                );
+            }
+
+            #[tokio::test]
+            async fn test_retain_handler_status_code() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    (
+                        StatusCode::CREATED,
+                        Negotiate(Example {
+                            message: "Hello, test!".to_string(),
+                        }),
+                    )
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), StatusCode::CREATED);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/json"
+                );
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    json!({ "message": "Hello, test!" }).to_string()
+                );
+            }
         }
     }
 
     #[cfg(feature = "cbor")]
     mod cbor {
-        use axum::{body::Body, http::header::CONTENT_TYPE};
         use cbor4ii::core::{enc::Encode, utils::BufWriter, Value};
 
         use super::*;
 
-        #[tokio::test]
-        async fn test_can_read_input_with_specified_header() {
-            #[axum::debug_handler]
-            async fn handler(Negotiate(input): Negotiate<Example>) -> impl IntoResponse {
-                format!("Hello, {}!", input.message)
+        mod input {
+            use super::*;
+
+            #[cfg(feature = "default-cbor")]
+            #[tokio::test]
+            async fn test_can_read_input_without_content_type_by_default() {
+                #[axum::debug_handler]
+                async fn handler(Negotiate(input): Negotiate<Example>) -> impl IntoResponse {
+                    format!("Hello, {}!", input.message)
+                }
+
+                let app = Router::new().route("/", post(handler));
+                let body = {
+                    let mut writer = BufWriter::new(Vec::new());
+                    Value::Map(vec![(
+                        Value::Text("message".to_string()),
+                        Value::Text("test".to_string()),
+                    )])
+                    .encode(&mut writer)
+                    .unwrap();
+                    writer.into_inner()
+                };
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .body(Body::from(body))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Hello, test!"
+                );
             }
 
-            let app = Router::new().route("/", post(handler));
-            let body = {
-                let mut writer = BufWriter::new(Vec::new());
-                Value::Map(vec![(
-                    Value::Text("message".to_string()),
-                    Value::Text("test".to_string()),
-                )])
-                .encode(&mut writer)
-                .unwrap();
-                writer.into_inner()
-            };
+            #[tokio::test]
+            async fn test_can_read_input_with_specified_header() {
+                #[axum::debug_handler]
+                async fn handler(Negotiate(input): Negotiate<Example>) -> impl IntoResponse {
+                    format!("Hello, {}!", input.message)
+                }
 
-            let response = app
-                .oneshot(
-                    Request::builder()
-                        .uri("/")
-                        .header(CONTENT_TYPE, "application/cbor")
-                        .method("POST")
-                        .body(Body::from(body))
-                        .unwrap(),
-                )
-                .await
-                .unwrap();
+                let app = Router::new().route("/", post(handler));
+                let body = {
+                    let mut writer = BufWriter::new(Vec::new());
+                    Value::Map(vec![(
+                        Value::Text("message".to_string()),
+                        Value::Text("test".to_string()),
+                    )])
+                    .encode(&mut writer)
+                    .unwrap();
+                    writer.into_inner()
+                };
 
-            assert_eq!(response.status(), 200);
-            assert_eq!(
-                response.into_body().collect().await.unwrap().to_bytes(),
-                "Hello, test!"
-            );
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .header(CONTENT_TYPE, "application/cbor")
+                            .method("POST")
+                            .body(Body::from(body))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Hello, test!"
+                );
+            }
+        }
+
+        mod output {
+            use super::*;
+
+            #[tokio::test]
+            async fn test_encode_as_requested() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "application/cbor")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/cbor"
+                );
+                assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), {
+                    let mut writer = BufWriter::new(Vec::new());
+                    Value::Map(vec![(
+                        Value::Text("message".to_string()),
+                        Value::Text("Hello, test!".to_string()),
+                    )])
+                    .encode(&mut writer)
+                    .unwrap();
+                    writer.into_inner()
+                });
+            }
+
+            #[tokio::test]
+            async fn test_retain_status_code() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    (
+                        StatusCode::CREATED,
+                        Negotiate(Example {
+                            message: "Hello, test!".to_string(),
+                        }),
+                    )
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "application/cbor")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), StatusCode::CREATED);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/cbor"
+                );
+                assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), {
+                    let mut writer = BufWriter::new(Vec::new());
+                    Value::Map(vec![(
+                        Value::Text("message".to_string()),
+                        Value::Text("Hello, test!".to_string()),
+                    )])
+                    .encode(&mut writer)
+                    .unwrap();
+                    writer.into_inner()
+                });
+            }
+
+            #[cfg(feature = "default-cbor")]
+            #[tokio::test]
+            async fn test_default_encoding_without_header() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    (
+                        StatusCode::CREATED,
+                        Negotiate(Example {
+                            message: "Hello, test!".to_string(),
+                        }),
+                    )
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), StatusCode::CREATED);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/cbor"
+                );
+                assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), {
+                    let mut writer = BufWriter::new(Vec::new());
+                    Value::Map(vec![(
+                        Value::Text("message".to_string()),
+                        Value::Text("Hello, test!".to_string()),
+                    )])
+                    .encode(&mut writer)
+                    .unwrap();
+                    writer.into_inner()
+                });
+            }
+
+            #[cfg(feature = "default-cbor")]
+            #[tokio::test]
+            async fn test_default_encoding_with_star() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    (
+                        StatusCode::CREATED,
+                        Negotiate(Example {
+                            message: "Hello, test!".to_string(),
+                        }),
+                    )
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "*/*")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), StatusCode::CREATED);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/cbor"
+                );
+                assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), {
+                    let mut writer = BufWriter::new(Vec::new());
+                    Value::Map(vec![(
+                        Value::Text("message".to_string()),
+                        Value::Text("Hello, test!".to_string()),
+                    )])
+                    .encode(&mut writer)
+                    .unwrap();
+                    writer.into_inner()
+                });
+            }
         }
     }
 }
