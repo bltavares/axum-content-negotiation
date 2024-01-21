@@ -1,21 +1,28 @@
 [package]
 name = "axum-content-negotiation"
+description = "Axum middleware to use Accept and Content-Type headers to serialize with different formats"
+keywords = ["axum-middleware", "middleware", "content-negotiation"]
+
 version = "0.1.0"
 edition = "2021"
 
+authors = ["Bruno Tavares <connect+github@bltavares.com>"]
+license = "MIT OR Apache-2.0"
+homepage = "https://github.com/bltavares/axum-content-negotiation"
+repository = "https://github.com/bltavares/axum-content-negotiation"
+
 [dependencies]
-axum = "*"
-tower = "*"
-serde = "*"
-erased-serde = "*"
-futures = "*"
+axum = "0.7.4"
+tower = "0.4.13"
+serde = "1.0.195"
+erased-serde = "0.4.2"
 
-serde_json = { version = "*", optional = true }
-simd-json = { version = "*", optional = true }
+serde_json = { version = "1.0.111", optional = true }
+simd-json = { version = "0.13.8", optional = true }
 
-cbor4ii = { version = "*", optional = true, features = ["serde1"] }
+cbor4ii = { version = "0.3.2", optional = true, features = ["serde1"] }
 
-tracing = "*"
+tracing = "0.1.40"
 
 [features]
 default = ["cbor", "simd-json", "default-json"]
@@ -27,6 +34,6 @@ default-cbor = []
 
 [dev-dependencies]
 http-body-util = "0.1.0"
-tokio = { version = "1.0", features = ["full"] }
-axum = { version = "*", features = ["macros"] }
-serde = { version = "*", features = ["derive"] }
+tokio = { version = "1.35.1", features = ["full"] }
+axum = { version = "0.7.4", features = ["macros"] }
+serde = { version = "1.0.195", features = ["derive"] }

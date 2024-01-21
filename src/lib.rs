@@ -1,4 +1,8 @@
+#![doc = include_str!("../README.md")]
+
 use std::{
+    future::Future,
+    pin::Pin,
     sync::Arc,
     task::{Context, Poll},
 };
@@ -14,11 +18,12 @@ use axum::{
     response::{IntoResponse, Response},
     Extension,
 };
-use futures::future::BoxFuture;
 use tower::Service;
 
-#[derive(Debug, Clone)]
-pub struct Negotiate<T>(T);
+#[cfg(all(feature = "json", feature = "simd-json"))]
+compile_error!("json and simd-json features are mutually exclusive");
+#[cfg(all(feature = "default-json", feature = "default-cbor"))]
+compile_error!("default-json and default-cbor features are mutually exclusive");
 
 #[cfg(feature = "default-json")]
 /// Default to application/json if the request does not have any accept header or uses */* when json is enabled
@@ -35,8 +40,8 @@ static DEFAULT_CONTENT_TYPE: HeaderValue = HeaderValue::from_static(DEFAULT_CONT
 
 static MALFORMED_RESPONSE: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "Malformed request body");
 
-#[cfg(all(feature = "json", feature = "simd-json"))]
-compile_error!("json and simd-json features are mutually exclusive");
+#[derive(Debug, Clone)]
+pub struct Negotiate<T>(T);
 
 #[async_trait]
 impl<T, S> FromRequest<S> for Negotiate<T>
@@ -181,8 +186,8 @@ where
 {
     type Response = axum::response::Response;
     type Error = T::Error;
-    // `BoxFuture` is a type alias for `Pin<Box<dyn Future + Send + 'a>>`
-    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+    type Future =
+        Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         self.0.poll_ready(cx)

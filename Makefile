@@ -34,3 +34,8 @@ test:
 	cargo test --all
 	cargo test --all --no-default-features --features json
 .PHONY: test
+
+# Build docs locally
+doc:
+	cargo doc --no-deps --all --open
+.PHONY: doc
