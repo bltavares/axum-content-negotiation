@@ -41,3 +41,8 @@ test:
 doc:
 	cargo doc --no-deps --all --open
 .PHONY: doc
+
+# Generate new entry for CHANGELOG.md
+changelog:
+	cargo bin changelog -o CHANGELOG.md
+.PHONY: changelog
