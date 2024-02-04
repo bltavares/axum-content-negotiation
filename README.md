@@ -1,5 +1,20 @@
 # axum-content-negotiation
 
+HTTP Content Negotiation helpers for Axum.
+
+<a href="https://github.com/bltavares/axum-content-negotiation/actions?query=workflow%3AQuickstart+branch%3Amaster">
+    <img src="https://img.shields.io/github/actions/workflow/status/bltavares/axum-content-negotiation/main.yml?branch=master" />
+</a>
+<a href="https://github.com/bltavares/axum-content-negotiation/actions?query=workflow%3ACross-compile+branch%3Amaster">
+    <img src="https://img.shields.io/github/actions/workflow/status/bltavares/axum-content-negotiation/main.yml?branch=master" />
+</a>
+<a href="https://crates.io/crates/axum-content-negotiation">
+    <img src="https://img.shields.io/crates/v/axum-content-negotiation.svg" />
+</a>
+<a href="https://docs.rs/axum-content-negotiation">
+    <img src="https://docs.rs/axum-content-negotiation/badge.svg" />
+</a>
+
 A set of Axum Layers and Extractors that enable content negotiation using `Accept` and `Content-Type` headers.
 It implements schemaless serialization and deserialization content negotiation. Currently supported encodings are:
 - `application/json`

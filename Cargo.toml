@@ -42,3 +42,4 @@ serde = { version = "1.0.195", features = ["derive"] }
 cargo-binstall = { version = "1.6.1" }
 cargo-nextest = { version = "0.9.67", locked = true }
 bacon = { version = "2.14.1", locked = true }
+changelog = { version = "0.3.4" }
