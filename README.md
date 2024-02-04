@@ -2,11 +2,11 @@
 
 HTTP Content Negotiation middleware and extractor for Axum.
 
-<a href="https://github.com/bltavares/axum-content-negotiation/actions?query=workflow%3AQuickstart+branch%3Amaster">
-    <img src="https://img.shields.io/github/actions/workflow/status/bltavares/axum-content-negotiation/main.yml?branch=master" />
+<a href="https://github.com/bltavares/axum-content-negotiation/actions?query=workflow%3AQuickstart+branch%3Amain">
+    <img src="https://img.shields.io/github/actions/workflow/status/bltavares/axum-content-negotiation/main.yml?branch=main" />
 </a>
-<a href="https://github.com/bltavares/axum-content-negotiation/actions?query=workflow%3ACross-compile+branch%3Amaster">
-    <img src="https://img.shields.io/github/actions/workflow/status/bltavares/axum-content-negotiation/main.yml?branch=master" />
+<a href="https://github.com/bltavares/axum-content-negotiation/actions?query=workflow%3ACross-compile+branch%3Amain">
+    <img src="https://img.shields.io/github/actions/workflow/status/bltavares/axum-content-negotiation/main.yml?branch=main" />
 </a>
 <a href="https://crates.io/crates/axum-content-negotiation">
     <img src="https://img.shields.io/crates/v/axum-content-negotiation.svg" />
