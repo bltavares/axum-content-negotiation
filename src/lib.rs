@@ -40,9 +40,42 @@ static DEFAULT_CONTENT_TYPE: HeaderValue = HeaderValue::from_static(DEFAULT_CONT
 
 static MALFORMED_RESPONSE: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "Malformed request body");
 
+/// Used either as an [Extract](axum::extract::FromRequest) or [Response](axum::response::IntoResponse) to negotiate the serialization format used.
+///
+/// When used as an [Extract](axum::extract::FromRequest), it will attempt to deserialize the request body into the target type based on the `Content-Type` header.
+/// When used as a [Response](axum::response::IntoResponse), it will attempt to serialize the target type into the response body based on the `Accept` header.
+///
+/// For the [Response](axum::response::IntoResponse) case, the [NegotiateLayer] must be used to wrap the service in order to acctually perform the serialization.
+/// If the [Layer](tower::Layer) is not used, the response will be an 415 Unsupported Media Type error.
+///
+/// ## Example
+///
+/// ```rust
+/// use axum_content_negotiation::Negotiate;
+///
+/// #[derive(serde::Serialize, serde::Deserialize)]
+/// struct Example {
+///    message: String,
+/// }
+///
+/// async fn handler(
+///    Negotiate(input): Negotiate<Example>
+/// ) -> impl axum::response::IntoResponse {
+///   Negotiate(Example {
+///     message: format!("Hello, {}!", input.message)
+///   })
+/// }
+/// ```
 #[derive(Debug, Clone)]
-pub struct Negotiate<T>(T);
+pub struct Negotiate<T>(
+    /// The stored content to be serialized/deserialized
+    pub T,
+);
 
+/// [Negotiate] implements [FromRequest] if the target type is deserializable.
+///
+/// It will attempt to deserialize the request body based on the `Content-Type` header.
+/// If the `Content-Type` header is not supported, it will return a 415 Unsupported Media Type response without running the handler.
 #[async_trait]
 impl<T, S> FromRequest<S> for Negotiate<T>
 where
@@ -117,6 +150,9 @@ where
     }
 }
 
+/// Internal Negotiate object without the type parameter explicitly, in order to be able retrieve it as an extension on the [Layer](tower::Layer) response processing.
+///
+/// Considering [Extension]s are type safe, and we don't know ahead of time the type of the stored content, we must store it erased to dynamically dispatch for serialization latter.
 #[derive(Clone)]
 struct ErasedNegotiate(Arc<Box<dyn erased_serde::Serialize + Send + Sync>>);
 
@@ -129,6 +165,9 @@ where
     }
 }
 
+/// [Negotiate] implements [IntoResponse] if the internal content is serialiazable.
+///
+/// It will return convert it to a 415 Unsupported Media Type by default, which will be converted to the right response status on the [NegotiateLayer].
 impl<T> IntoResponse for Negotiate<T>
 where
     T: serde::Serialize + Send + Sync + 'static,
@@ -144,8 +183,11 @@ where
     }
 }
 
+/// Layer responsible to convert a [Negotiate] response into the right serialization format based on the `Accept` header.
+///
+/// If the `Accept` header is not supported, it will return a 406 Not Acceptable response without running the handler.
 #[derive(Clone)]
-struct NegotiateLayer;
+pub struct NegotiateLayer;
 
 impl<S> tower::Layer<S> for NegotiateLayer {
     type Service = NegotiateService<S>;
@@ -175,8 +217,9 @@ impl AcceptExt for axum::http::HeaderMap {
     }
 }
 
+/// Serialize the stored [Extension] struct defined by a [Negotiate] into the right serialization format based on the `Accept` header.
 #[derive(Clone)]
-struct NegotiateService<S>(S);
+pub struct NegotiateService<S>(S);
 
 impl<T> Service<Request> for NegotiateService<T>
 where

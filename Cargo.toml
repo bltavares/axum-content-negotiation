@@ -37,3 +37,8 @@ http-body-util = "0.1.0"
 tokio = { version = "1.35.1", features = ["full"] }
 axum = { version = "0.7.4", features = ["macros"] }
 serde = { version = "1.0.195", features = ["derive"] }
+
+[package.metadata.bin]
+cargo-binstall = { version = "1.6.1" }
+cargo-nextest = { version = "0.9.67", locked = true }
+bacon = { version = "2.14.1", locked = true }
