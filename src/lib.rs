@@ -253,8 +253,8 @@ where
         let future = self.0.call(request);
 
         Box::pin(async move {
-            let x = future.await?;
-            let response: Response = x.into_response();
+            let inner_service = future.await?;
+            let response: Response = inner_service.into_response();
             let data = response.extensions().get::<ErasedNegotiate>();
 
             let Some(ErasedNegotiate(payload)) = data else {
