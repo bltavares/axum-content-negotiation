@@ -8,7 +8,6 @@ use std::{
 };
 
 use axum::{
-    async_trait,
     body::Bytes,
     extract::{FromRequest, Request},
     http::{
@@ -76,7 +75,6 @@ pub struct Negotiate<T>(
 ///
 /// It will attempt to deserialize the request body based on the `Content-Type` header.
 /// If the `Content-Type` header is not supported, it will return a 415 Unsupported Media Type response without running the handler.
-#[async_trait]
 impl<T, S> FromRequest<S> for Negotiate<T>
 where
     T: serde::de::DeserializeOwned,
