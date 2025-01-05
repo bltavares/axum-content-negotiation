@@ -8,7 +8,6 @@ use std::{
 };
 
 use axum::{
-    async_trait,
     body::Bytes,
     extract::{FromRequest, Request},
     http::{
@@ -76,7 +75,6 @@ pub struct Negotiate<T>(
 ///
 /// It will attempt to deserialize the request body based on the `Content-Type` header.
 /// If the `Content-Type` header is not supported, it will return a 415 Unsupported Media Type response without running the handler.
-#[async_trait]
 impl<T, S> FromRequest<S> for Negotiate<T>
 where
     T: serde::de::DeserializeOwned,
@@ -358,7 +356,9 @@ mod test {
             async fn test_does_not_process_handler_if_content_type_is_not_supported() {
                 #[axum::debug_handler]
                 async fn handler(_: Negotiate<Example>) -> impl IntoResponse {
-                    unimplemented!("This should not be called")
+                    unimplemented!("This should not be called");
+                    #[allow(unreachable_code)]
+                    ()
                 }
 
                 let app = Router::new()
@@ -421,7 +421,9 @@ mod test {
             async fn test_does_not_process_handler_if_accept_is_not_supported() {
                 #[axum::debug_handler]
                 async fn handler() -> impl IntoResponse {
-                    unimplemented!("This should not be called")
+                    unimplemented!("This should not be called");
+                    #[allow(unreachable_code)]
+                    ()
                 }
 
                 let app = Router::new()
@@ -518,7 +520,9 @@ mod test {
             async fn test_does_not_accept_invalid_inputs() {
                 #[axum::debug_handler]
                 async fn handler(_: Negotiate<Example>) -> impl IntoResponse {
-                    unimplemented!("This should not be called")
+                    unimplemented!("This should not be called");
+                    #[allow(unreachable_code)]
+                    ()
                 }
 
                 let app = Router::new()
