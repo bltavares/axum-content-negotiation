@@ -1,3 +1,21 @@
+## 2025-01-05, Version v0.1.2
+### Commits
+- [[`8a91d5b6e6`](https://github.com/bltavares/axum-content-negotiation/commit/8a91d5b6e6237bb8037cf7a1f1da973368ec7c56)] chore: Release axum-content-negotiation version 0.1.2 (Bruno Tavares)
+- [[`bc151c3f71`](https://github.com/bltavares/axum-content-negotiation/commit/bc151c3f716fbb30722c7d10e02d4195251b02e2)] dev: Include dependency on semver checks for dev tasks (Bruno Tavares)
+- [[`724886ce56`](https://github.com/bltavares/axum-content-negotiation/commit/724886ce56610a7c813e0d36408f1460c5e67d56)] Merge pull request #4 from bltavares/upgrade-deps (Bruno Tavares)
+- [[`951b3ae8da`](https://github.com/bltavares/axum-content-negotiation/commit/951b3ae8dae00958d99ccc7bc0a5004b7d117938)] Upgrade axum to 0.8.x (Bruno Tavares)
+- [[`4352aa5098`](https://github.com/bltavares/axum-content-negotiation/commit/4352aa509899d711f3aac875786459987133fb7c)] Update the changelog (Bruno Tavares)
+
+### Stats
+```diff
+ CHANGELOG.md |  34 ++++++++-
+ Cargo.lock   | 252 ++++++++----------------------------------------------------
+ Cargo.toml   |  12 +--
+ src/lib.rs   |  14 +--
+ 4 files changed, 85 insertions(+), 227 deletions(-)
+```
+
+
 ## 2024-04-27, Version v0.1.1
 ### Commits
 - [[`04cc447c30`](https://github.com/bltavares/axum-content-negotiation/commit/04cc447c30a74e552f31723f6a9845aa8e4251f6)] chore: Release axum-content-negotiation version 0.1.1 (Bruno Tavares)
