@@ -72,7 +72,7 @@ dependencies = [
 
 [[package]]
 name = "axum-content-negotiation"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "cbor4ii",
