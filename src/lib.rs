@@ -229,7 +229,9 @@ impl AcceptExt for axum::http::HeaderMap {
                     (mime_type, q)
                 })
             })
-            .max_by(|(_,q1),(_,q2)| q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Greater))
+             // Reverse it so that given equal q values, the first one will come last, and be selected by max_by
+            .rev()
+            .max_by(|(_,q1),(_,q2)| q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Less))
             .map(|(mime, _)| mime)
         })
         .unwrap_or(None)
@@ -973,6 +975,73 @@ mod test {
                             .uri("/")
                             .method("POST")
                             .header(ACCEPT, "application/cbor;q=0.2,application/json")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/json"
+                );
+            }
+
+            // Given equal q values, the first mime type should be selected
+            #[cfg(feature = "json")]
+            #[tokio::test]
+            async fn test_encode_as_requested_equal_q() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "application/cbor,application/json")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/cbor"
+                );
+            }
+            // Given equal q values, the first mime type should be selected
+            #[cfg(feature = "json")]
+            #[tokio::test]
+            async fn test_encode_as_requested_equal_q2() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "application/json,application/cbor")
                             .body(Body::empty())
                             .unwrap(),
                     )
