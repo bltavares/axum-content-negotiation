@@ -138,11 +138,11 @@ where
 
             _ => {
                 tracing::error!("unsupported accept header: {:?}", accept);
-                return Err((
+                Err((
                     StatusCode::NOT_ACCEPTABLE,
                     "Invalid content type on request",
                 )
-                    .into_response());
+                    .into_response())
             }
         }
     }
