@@ -203,38 +203,45 @@ impl AcceptExt for axum::http::HeaderMap {
     fn negotiate(&self) -> Option<&'static str> {
         let accept = self.get(ACCEPT).unwrap_or(&DEFAULT_CONTENT_TYPE);
 
-        accept.to_str().map(|s| {
-            s.split(',').map(str::trim)
-            .filter_map(|s| {
-                let (mime, q_str) = s.split_once(";").unwrap_or((s, ""));
+        accept
+            .to_str()
+            .map(|s| {
+                s.split(',')
+                    .map(str::trim)
+                    .filter_map(|s| {
+                        let (mime, q_str) = s.split_once(";").unwrap_or((s, ""));
 
-                // See if it's a type we support
-                let mime_type = match mime.as_bytes() {
-                    #[cfg(any(feature = "simd-json", feature = "json"))]
-                    b"application/json" => Some("application/json"),
-                    #[cfg(feature = "cbor")]
-                    b"application/cbor" => Some("application/cbor"),
-                    b"*/*" => Some(DEFAULT_CONTENT_TYPE_VALUE),
-                    _ => None,
-                };
+                        // See if it's a type we support
+                        let mime_type = match mime.as_bytes() {
+                            #[cfg(any(feature = "simd-json", feature = "json"))]
+                            b"application/json" => Some("application/json"),
+                            #[cfg(feature = "cbor")]
+                            b"application/cbor" => Some("application/cbor"),
+                            b"*/*" => Some(DEFAULT_CONTENT_TYPE_VALUE),
+                            _ => None,
+                        };
 
-                // If we support it, parse or default the q value
-                mime_type.map(|mime_type| {
-                    let q = q_str.split(';')
-                        .map(str::trim)
-                        .find_map(|s| {
-                            s.strip_prefix("q=").map(|s| s.parse::<f32>().unwrap_or(0.0))
+                        // If we support it, parse or default the q value
+                        mime_type.map(|mime_type| {
+                            let q = q_str
+                                .split(';')
+                                .map(str::trim)
+                                .find_map(|s| {
+                                    s.strip_prefix("q=")
+                                        .map(|s| s.parse::<f32>().unwrap_or(0.0))
+                                })
+                                .unwrap_or(1.0);
+                            (mime_type, q)
                         })
-                        .unwrap_or(1.0);
-                    (mime_type, q)
-                })
+                    })
+                    // Reverse it so that given equal q values, the first one will come last, and be selected by max_by
+                    .rev()
+                    .max_by(|(_, q1), (_, q2)| {
+                        q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Less)
+                    })
+                    .map(|(mime, _)| mime)
             })
-             // Reverse it so that given equal q values, the first one will come last, and be selected by max_by
-            .rev()
-            .max_by(|(_,q1),(_,q2)| q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Less))
-            .map(|(mime, _)| mime)
-        })
-        .unwrap_or(None)
+            .unwrap_or(None)
     }
 }
 
@@ -372,7 +379,7 @@ mod test {
     mod general {
         use super::*;
 
-        #[cfg(feature="cbor")]
+        #[cfg(feature = "cbor")]
         pub fn expected_cbor_body() -> Vec<u8> {
             use cbor4ii::core::{enc::Encode, utils::BufWriter, Value};
 
@@ -381,8 +388,8 @@ mod test {
                 Value::Text("message".to_string()),
                 Value::Text("Hello, test!".to_string()),
             )])
-                .encode(&mut writer)
-                .unwrap();
+            .encode(&mut writer)
+            .unwrap();
             writer.into_inner()
         }
 
@@ -686,7 +693,10 @@ mod test {
                         Request::builder()
                             .uri("/")
                             .method("POST")
-                            .header(ACCEPT, "application/json;q=0.8;other;stuff,application/cbor;q=0.9")
+                            .header(
+                                ACCEPT,
+                                "application/json;q=0.8;other;stuff,application/cbor;q=0.9",
+                            )
                             .body(Body::empty())
                             .unwrap(),
                     )
