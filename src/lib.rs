@@ -138,11 +138,11 @@ where
 
             _ => {
                 tracing::error!("unsupported accept header: {:?}", accept);
-                return Err((
+                Err((
                     StatusCode::NOT_ACCEPTABLE,
                     "Invalid content type on request",
                 )
-                    .into_response());
+                    .into_response())
             }
         }
     }
@@ -200,18 +200,48 @@ trait AcceptExt {
 }
 
 impl AcceptExt for axum::http::HeaderMap {
-    /// Basic implementation without q= values
     fn negotiate(&self) -> Option<&'static str> {
         let accept = self.get(ACCEPT).unwrap_or(&DEFAULT_CONTENT_TYPE);
 
-        match accept.as_bytes() {
-            #[cfg(any(feature = "simd-json", feature = "json"))]
-            b"application/json" => Some("application/json"),
-            #[cfg(feature = "cbor")]
-            b"application/cbor" => Some("application/cbor"),
-            b"*/*" => Some(DEFAULT_CONTENT_TYPE_VALUE),
-            _ => None,
-        }
+        accept
+            .to_str()
+            .map(|s| {
+                s.split(',')
+                    .map(str::trim)
+                    .filter_map(|s| {
+                        let (mime, q_str) = s.split_once(";").unwrap_or((s, ""));
+
+                        // See if it's a type we support
+                        let mime_type = match mime.as_bytes() {
+                            #[cfg(any(feature = "simd-json", feature = "json"))]
+                            b"application/json" => Some("application/json"),
+                            #[cfg(feature = "cbor")]
+                            b"application/cbor" => Some("application/cbor"),
+                            b"*/*" => Some(DEFAULT_CONTENT_TYPE_VALUE),
+                            _ => None,
+                        };
+
+                        // If we support it, parse or default the q value
+                        mime_type.map(|mime_type| {
+                            let q = q_str
+                                .split(';')
+                                .map(str::trim)
+                                .find_map(|s| {
+                                    s.strip_prefix("q=")
+                                        .map(|s| s.parse::<f32>().unwrap_or(0.0))
+                                })
+                                .unwrap_or(1.0);
+                            (mime_type, q)
+                        })
+                    })
+                    // Reverse it so that given equal q values, the first one will come last, and be selected by max_by
+                    .rev()
+                    .max_by(|(_, q1), (_, q2)| {
+                        q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Less)
+                    })
+                    .map(|(mime, _)| mime)
+            })
+            .unwrap_or(None)
     }
 }
 
@@ -348,6 +378,20 @@ mod test {
 
     mod general {
         use super::*;
+
+        #[cfg(feature = "cbor")]
+        pub fn expected_cbor_body() -> Vec<u8> {
+            use cbor4ii::core::{enc::Encode, utils::BufWriter, Value};
+
+            let mut writer = BufWriter::new(Vec::new());
+            Value::Map(vec![(
+                Value::Text("message".to_string()),
+                Value::Text("Hello, test!".to_string()),
+            )])
+            .encode(&mut writer)
+            .unwrap();
+            writer.into_inner()
+        }
 
         mod input {
             use super::*;
@@ -591,6 +635,81 @@ mod test {
                 );
             }
 
+            #[tokio::test]
+            async fn test_encode_as_requested_multi() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "not-supported, application/json;q=5,something-else")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                let expected_body = json!({ "message": "Hello, test!" }).to_string();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/json"
+                );
+                assert_eq!(content_length(response.headers()), expected_body.len());
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    expected_body,
+                );
+            }
+
+            #[cfg(feature = "cbor")]
+            #[tokio::test]
+            async fn test_encode_as_requested_multi_w_q() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(
+                                ACCEPT,
+                                "application/json;q=0.8;other;stuff,application/cbor;q=0.9",
+                            )
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/cbor"
+                );
+            }
+
             #[cfg(feature = "default-json")]
             #[tokio::test]
             async fn test_use_default_encoding_without_headers() {
@@ -655,13 +774,25 @@ mod test {
                     .unwrap();
 
                 assert_eq!(response.status(), StatusCode::CREATED);
+                #[cfg(feature = "default-json")]
                 assert_eq!(
                     response.headers().get(CONTENT_TYPE).unwrap(),
                     "application/json"
                 );
+                #[cfg(feature = "default-json")]
                 assert_eq!(
                     response.into_body().collect().await.unwrap().to_bytes(),
                     json!({ "message": "Hello, test!" }).to_string()
+                );
+                #[cfg(feature = "default-cbor")]
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/cbor"
+                );
+                #[cfg(feature = "default-cbor")]
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    general::expected_cbor_body()
                 );
             }
         }
@@ -781,16 +912,7 @@ mod test {
                     .await
                     .unwrap();
 
-                let expected_body = {
-                    let mut writer = BufWriter::new(Vec::new());
-                    Value::Map(vec![(
-                        Value::Text("message".to_string()),
-                        Value::Text("Hello, test!".to_string()),
-                    )])
-                    .encode(&mut writer)
-                    .unwrap();
-                    writer.into_inner()
-                };
+                let expected_body = general::expected_cbor_body();
 
                 assert_eq!(response.status(), 200);
                 assert_eq!(
@@ -801,6 +923,145 @@ mod test {
                 assert_eq!(
                     response.into_body().collect().await.unwrap().to_bytes(),
                     expected_body,
+                );
+            }
+
+            #[tokio::test]
+            async fn test_encode_as_requested_multi() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "something-else;q=0.5,application/cbor")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                let expected_body = general::expected_cbor_body();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/cbor"
+                );
+                assert_eq!(content_length(response.headers()), expected_body.len());
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    expected_body,
+                );
+            }
+
+            #[cfg(feature = "json")]
+            #[tokio::test]
+            async fn test_encode_as_requested_multi_w_q() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "application/cbor;q=0.2,application/json")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/json"
+                );
+            }
+
+            // Given equal q values, the first mime type should be selected
+            #[cfg(feature = "json")]
+            #[tokio::test]
+            async fn test_encode_as_requested_equal_q() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "application/cbor,application/json")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/cbor"
+                );
+            }
+            // Given equal q values, the first mime type should be selected
+            #[cfg(feature = "json")]
+            #[tokio::test]
+            async fn test_encode_as_requested_equal_q2() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "application/json,application/cbor")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/json"
                 );
             }
 
@@ -837,16 +1098,10 @@ mod test {
                     response.headers().get(CONTENT_TYPE).unwrap(),
                     "application/cbor"
                 );
-                assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), {
-                    let mut writer = BufWriter::new(Vec::new());
-                    Value::Map(vec![(
-                        Value::Text("message".to_string()),
-                        Value::Text("Hello, test!".to_string()),
-                    )])
-                    .encode(&mut writer)
-                    .unwrap();
-                    writer.into_inner()
-                });
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    general::expected_cbor_body()
+                );
             }
 
             #[cfg(feature = "default-cbor")]
@@ -882,16 +1137,10 @@ mod test {
                     response.headers().get(CONTENT_TYPE).unwrap(),
                     "application/cbor"
                 );
-                assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), {
-                    let mut writer = BufWriter::new(Vec::new());
-                    Value::Map(vec![(
-                        Value::Text("message".to_string()),
-                        Value::Text("Hello, test!".to_string()),
-                    )])
-                    .encode(&mut writer)
-                    .unwrap();
-                    writer.into_inner()
-                });
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    general::expected_cbor_body()
+                );
             }
 
             #[cfg(feature = "default-cbor")]
@@ -928,16 +1177,10 @@ mod test {
                     response.headers().get(CONTENT_TYPE).unwrap(),
                     "application/cbor"
                 );
-                assert_eq!(response.into_body().collect().await.unwrap().to_bytes(), {
-                    let mut writer = BufWriter::new(Vec::new());
-                    Value::Map(vec![(
-                        Value::Text("message".to_string()),
-                        Value::Text("Hello, test!".to_string()),
-                    )])
-                    .encode(&mut writer)
-                    .unwrap();
-                    writer.into_inner()
-                });
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    general::expected_cbor_body()
+                );
             }
         }
     }
