@@ -1,3 +1,25 @@
+## 2025-05-16, Version v0.1.3
+### Commits
+- [[`e6eca94052`](https://github.com/bltavares/axum-content-negotiation/commit/e6eca940521d44df9dfc799f0934fdd291c88615)] chore: Release axum-content-negotiation version 0.1.3 (Bruno Tavares)
+- [[`29117d515d`](https://github.com/bltavares/axum-content-negotiation/commit/29117d515df83893dd2fd306b830eae51e1326ea)] Merge pull request #6 from bltavares/optmize-multiple-q-entries (Bruno Tavares)
+- [[`fa78b21684`](https://github.com/bltavares/axum-content-negotiation/commit/fa78b2168419e047f0e13d8b37ec7aeb72b9899a)] Optmize the handling of multiple encoding formats (Bruno Tavares)
+- [[`c1d44f0014`](https://github.com/bltavares/axum-content-negotiation/commit/c1d44f00146fa7f3cf5e406872d27757effde519)] Merge pull request #5 from notNotDaniel/accept-multiple-mime-types (Bruno Tavares)
+- [[`c01536d73c`](https://github.com/bltavares/axum-content-negotiation/commit/c01536d73c45b9addc8ba6afad167c96aca6ba66)] run cargo fmt (Daniel Keller)
+- [[`a9848e163d`](https://github.com/bltavares/axum-content-negotiation/commit/a9848e163d64cb2a8d5eb2d7403ea49b93ff71e0)] remove unneeded return statement, to satisfy clippy (Daniel Keller)
+- [[`0d1b154520`](https://github.com/bltavares/axum-content-negotiation/commit/0d1b1545201ed28cf40a5140b8f287772e13ad00)] select the correct mime type given equal q values (Daniel Keller)
+- [[`d931cffa72`](https://github.com/bltavares/axum-content-negotiation/commit/d931cffa72ea2ca372dc7127e7cff28e50a0f4b6)] support multiple mime-types in the Accept header, and honor q= values (Daniel Keller)
+- [[`7be677598b`](https://github.com/bltavares/axum-content-negotiation/commit/7be677598b81de24c111b6adf0d8dcadc5f10321)] Update the changelog (Bruno Tavares)
+
+### Stats
+```diff
+ CHANGELOG.md |  18 +++-
+ Cargo.lock   |   2 +-
+ Cargo.toml   |   2 +-
+ src/lib.rs   | 386 ++++++++++++++++++++++++++++++++++++++++++++++++++++--------
+ 4 files changed, 356 insertions(+), 52 deletions(-)
+```
+
+
 ## 2025-01-05, Version v0.1.2
 ### Commits
 - [[`8a91d5b6e6`](https://github.com/bltavares/axum-content-negotiation/commit/8a91d5b6e6237bb8037cf7a1f1da973368ec7c56)] chore: Release axum-content-negotiation version 0.1.2 (Bruno Tavares)
