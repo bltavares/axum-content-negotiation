@@ -195,6 +195,23 @@ impl<S> tower::Layer<S> for NegotiateLayer {
     }
 }
 
+trait SupportedEncodingExt {
+    fn supported_encoding(&self) -> Option<&'static str>;
+}
+
+impl SupportedEncodingExt for &[u8] {
+    fn supported_encoding(&self) -> Option<&'static str> {
+        match *self {
+            #[cfg(any(feature = "simd-json", feature = "json"))]
+            b"application/json" => Some("application/json"),
+            #[cfg(feature = "cbor")]
+            b"application/cbor" => Some("application/cbor"),
+            b"*/*" => Some(DEFAULT_CONTENT_TYPE_VALUE),
+            _ => None,
+        }
+    }
+}
+
 trait AcceptExt {
     fn negotiate(&self) -> Option<&'static str>;
 }
@@ -202,46 +219,36 @@ trait AcceptExt {
 impl AcceptExt for axum::http::HeaderMap {
     fn negotiate(&self) -> Option<&'static str> {
         let accept = self.get(ACCEPT).unwrap_or(&DEFAULT_CONTENT_TYPE);
+        let precise_mime = accept.as_bytes().supported_encoding();
+
+        // Avoid iterations and splits if it's an exact match
+        if precise_mime.is_some() {
+            return precise_mime;
+        }
 
         accept
             .to_str()
-            .map(|s| {
-                s.split(',')
-                    .map(str::trim)
-                    .filter_map(|s| {
-                        let (mime, q_str) = s.split_once(";").unwrap_or((s, ""));
+            .ok()?
+            .split(',')
+            .map(str::trim)
+            .filter_map(|s| {
+                let mut segments = s.split(';').map(str::trim);
+                let mime = segments.next().unwrap_or(s);
 
-                        // See if it's a type we support
-                        let mime_type = match mime.as_bytes() {
-                            #[cfg(any(feature = "simd-json", feature = "json"))]
-                            b"application/json" => Some("application/json"),
-                            #[cfg(feature = "cbor")]
-                            b"application/cbor" => Some("application/cbor"),
-                            b"*/*" => Some(DEFAULT_CONTENT_TYPE_VALUE),
-                            _ => None,
-                        };
+                // See if it's a type we support
+                let mime_type = mime.as_bytes().supported_encoding()?;
 
-                        // If we support it, parse or default the q value
-                        mime_type.map(|mime_type| {
-                            let q = q_str
-                                .split(';')
-                                .map(str::trim)
-                                .find_map(|s| {
-                                    s.strip_prefix("q=")
-                                        .map(|s| s.parse::<f32>().unwrap_or(0.0))
-                                })
-                                .unwrap_or(1.0);
-                            (mime_type, q)
-                        })
+                // If we support it, parse or default the q value
+                let q = segments
+                    .find_map(|s| {
+                        let value = s.strip_prefix("q=")?;
+                        Some(value.parse::<f32>().unwrap_or(0.0))
                     })
-                    // Reverse it so that given equal q values, the first one will come last, and be selected by max_by
-                    .rev()
-                    .max_by(|(_, q1), (_, q2)| {
-                        q1.partial_cmp(q2).unwrap_or(std::cmp::Ordering::Less)
-                    })
-                    .map(|(mime, _)| mime)
+                    .unwrap_or(1.0);
+                Some((mime_type, q))
             })
-            .unwrap_or(None)
+            .min_by(|(_, a), (_, b)| b.total_cmp(a))
+            .map(|(mime, _)| mime)
     }
 }
 
@@ -305,7 +312,7 @@ where
                             )
                                 .into_response();
                             return Ok(response);
-                        };
+                        }
                     }
                     body
                 }
@@ -710,6 +717,42 @@ mod test {
                 );
             }
 
+            #[cfg(feature = "cbor")]
+            #[tokio::test]
+            async fn test_encode_as_requested_multi_w_q_same_weights() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(
+                                ACCEPT,
+                                "application/cbor;q=0.9,application/json;q=0.9;other;stuff",
+                            )
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/cbor"
+                );
+            }
+
             #[cfg(feature = "default-json")]
             #[tokio::test]
             async fn test_use_default_encoding_without_headers() {
@@ -967,7 +1010,7 @@ mod test {
 
             #[cfg(feature = "json")]
             #[tokio::test]
-            async fn test_encode_as_requested_multi_w_q() {
+            async fn test_encode_as_requested_multi_without_q_using_default_weight() {
                 #[axum::debug_handler]
                 async fn handler() -> impl IntoResponse {
                     Negotiate(Example {
