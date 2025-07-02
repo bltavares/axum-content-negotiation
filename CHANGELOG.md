@@ -1,3 +1,20 @@
+## 2025-07-02, Version v0.1.4
+### Commits
+- [[`9eab886257`](https://github.com/vipul43/axum-content-negotiation/commit/9eab886257dacc70cd56ac5db3804f2c48741959)] feat: add support for `application/x-www-urlencoded` content type & update depedencies (vipul43)
+- [[`654173f855`](https://github.com/vipul43/axum-content-negotiation/commit/654173f85551f97098ddf066cdf5412eb3f529da)] chore: Update the changelog (vipul43)
+- [[`86be14acc2`](https://github.com/vipul43/axum-content-negotiation/commit/86be14acc237556e04764e359b7b518f7aa51595)] chore: release 0.1.4
+
+### Stats
+```diff
+ CHANGELOG.md |   5 +
+ Cargo.lock   | 479 +++++++++++++++++++++++++++++++++++++++++++++++-----------------------------------------
+ Cargo.toml   |  22 ++--
+ Makefile     |   5 +
+ README.md    |   2 +
+ src/lib.rs   | 138 ++++++++++++++++++++++++--
+ 6 files changed, 410 insertions(+), 241 deletions(-)
+```
+
 ## 2025-05-16, Version v0.1.3
 ### Commits
 - [[`e6eca94052`](https://github.com/bltavares/axum-content-negotiation/commit/e6eca940521d44df9dfc799f0934fdd291c88615)] chore: Release axum-content-negotiation version 0.1.3 (Bruno Tavares)
