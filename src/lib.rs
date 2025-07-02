@@ -44,7 +44,7 @@ static MALFORMED_RESPONSE: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "Malfo
 /// When used as an [Extract](axum::extract::FromRequest), it will attempt to deserialize the request body into the target type based on the `Content-Type` header.
 /// When used as a [Response](axum::response::IntoResponse), it will attempt to serialize the target type into the response body based on the `Accept` header.
 ///
-/// For the [Response](axum::response::IntoResponse) case, the [NegotiateLayer] must be used to wrap the service in order to acctually perform the serialization.
+/// For the [Response](axum::response::IntoResponse) case, the [`NegotiateLayer`] must be used to wrap the service in order to acctually perform the serialization.
 /// If the [Layer](tower::Layer) is not used, the response will be an 415 Unsupported Media Type error.
 ///
 /// ## Example
@@ -71,7 +71,7 @@ pub struct Negotiate<T>(
     pub T,
 );
 
-/// [Negotiate] implements [FromRequest] if the target type is deserializable.
+/// [Negotiate] implements [`FromRequest`] if the target type is deserializable.
 ///
 /// It will attempt to deserialize the request body based on the `Content-Type` header.
 /// If the `Content-Type` header is not supported, it will return a 415 Unsupported Media Type response without running the handler.
@@ -129,7 +129,22 @@ where
                 })?;
 
                 let body = cbor4ii::serde::from_slice(&body).map_err(|e| {
-                    tracing::error!(error = %e, "failed to deserialize request body as json");
+                    tracing::error!(error = %e, "failed to deserialize request body as cbor");
+                    MALFORMED_RESPONSE.into_response()
+                })?;
+
+                Ok(Self(body))
+            }
+
+            #[cfg(feature = "form-urlencoded")]
+            b"application/x-www-form-urlencoded" => {
+                let body = Bytes::from_request(req, state).await.map_err(|e| {
+                    tracing::error!(error = %e, "failed to ready request body as bytes");
+                    e.into_response()
+                })?;
+
+                let body = serde_urlencoded::from_bytes(&body).map_err(|e| {
+                    tracing::error!(error = %e, "failed to deserialize request body as url-encoded form");
                     MALFORMED_RESPONSE.into_response()
                 })?;
 
@@ -163,9 +178,9 @@ where
     }
 }
 
-/// [Negotiate] implements [IntoResponse] if the internal content is serialiazable.
+/// [Negotiate] implements [`IntoResponse`] if the internal content is serialiazable.
 ///
-/// It will return convert it to a 415 Unsupported Media Type by default, which will be converted to the right response status on the [NegotiateLayer].
+/// It will return convert it to a 415 Unsupported Media Type by default, which will be converted to the right response status on the [`NegotiateLayer`].
 impl<T> IntoResponse for Negotiate<T>
 where
     T: serde::Serialize + Send + Sync + 'static,
@@ -206,6 +221,8 @@ impl SupportedEncodingExt for &[u8] {
             b"application/json" => Some("application/json"),
             #[cfg(feature = "cbor")]
             b"application/cbor" => Some("application/cbor"),
+            #[cfg(feature = "form-urlencoded")]
+            b"application/x-www-form-urlencoded" => Some("application/x-www-form-urlencoded"),
             b"*/*" => Some(DEFAULT_CONTENT_TYPE_VALUE),
             _ => None,
         }
@@ -304,7 +321,7 @@ where
                         let mut serializer = serde_json::Serializer::new(&mut body);
                         let mut serializer = <dyn erased_serde::Serializer>::erase(&mut serializer);
                         if let Err(e) = payload.erased_serialize(&mut serializer) {
-                            tracing::error!(error = %e, "failed to deserialize request body as json");
+                            tracing::error!(error = %e, "failed to serialize response body as json");
 
                             let response: Response = (
                                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -323,7 +340,7 @@ where
                         let mut serializer = cbor4ii::serde::Serializer::new(&mut body);
                         let mut serializer = <dyn erased_serde::Serializer>::erase(&mut serializer);
                         if let Err(e) = payload.erased_serialize(&mut serializer) {
-                            tracing::error!(error = %e, "failed to deserialize request body as cbor");
+                            tracing::error!(error = %e, "failed to serialize response body as cbor");
 
                             let response: Response = (
                                 StatusCode::INTERNAL_SERVER_ERROR,
@@ -334,6 +351,40 @@ where
                         }
                     }
                     body.into_inner()
+                }
+                #[cfg(feature = "form-urlencoded")]
+                "application/x-www-form-urlencoded" => {
+                    // Note: Serializing responses as URL-encoded forms is unusual but supported
+                    let mut buffer = Vec::new();
+                    {
+                        // Serialize to JSON first as an intermediate step
+                        let mut json_serializer = serde_json::Serializer::new(&mut buffer);
+                        let mut json_serializer =
+                            <dyn erased_serde::Serializer>::erase(&mut json_serializer);
+                        if let Err(e) = payload.erased_serialize(&mut json_serializer) {
+                            tracing::error!(error = %e, "failed to serialize response for form encoding");
+                            let response: Response = (
+                                StatusCode::INTERNAL_SERVER_ERROR,
+                                "Failed to serialize response",
+                            )
+                                .into_response();
+                            return Ok(response);
+                        }
+                    }
+
+                    // Parse JSON and convert to URL-encoded
+                    match serde_json::from_slice::<serde_json::Value>(&buffer) {
+                        Ok(json_value) => serde_urlencoded::to_string(&json_value)
+                            .unwrap_or_else(|e| {
+                                tracing::error!(error = %e, "failed to encode as URL form");
+                                String::new()
+                            })
+                            .into_bytes(),
+                        Err(e) => {
+                            tracing::error!(error = %e, "failed to parse JSON for form encoding");
+                            vec![]
+                        }
+                    }
                 }
                 _ => vec![],
             };
@@ -1223,6 +1274,79 @@ mod test {
                 assert_eq!(
                     response.into_body().collect().await.unwrap().to_bytes(),
                     general::expected_cbor_body()
+                );
+            }
+        }
+    }
+
+    #[cfg(feature = "form-urlencoded")]
+    mod form_urlencoded {
+        use super::*;
+
+        mod input {
+            use super::*;
+
+            #[tokio::test]
+            async fn test_can_read_urlencoded_input() {
+                #[axum::debug_handler]
+                async fn handler(Negotiate(input): Negotiate<Example>) -> impl IntoResponse {
+                    format!("Hello, {}!", input.message)
+                }
+
+                let app = Router::new().route("/", post(handler));
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+                            .method("POST")
+                            .body(Body::from("message=test"))
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Hello, test!"
+                );
+            }
+        }
+
+        mod output {
+            use super::*;
+
+            #[tokio::test]
+            async fn test_encode_as_urlencoded() {
+                #[axum::debug_handler]
+                async fn handler() -> impl IntoResponse {
+                    Negotiate(Example {
+                        message: "Hello, test!".to_string(),
+                    })
+                }
+
+                let app = Router::new()
+                    .route("/", post(handler))
+                    .layer(NegotiateLayer);
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .method("POST")
+                            .header(ACCEPT, "application/x-www-form-urlencoded")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.headers().get(CONTENT_TYPE).unwrap(),
+                    "application/x-www-form-urlencoded"
                 );
             }
         }

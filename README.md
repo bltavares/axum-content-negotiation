@@ -20,6 +20,7 @@ A set of Axum Layers and Extractors that enable content negotiation using `Accep
 It implements schemaless serialization and deserialization content negotiation. Currently supported encodings are:
 - `application/json`
 - `application/cbor`
+- `application/x-www-form-urlencoded`
 
 ## Installation
 
@@ -34,6 +35,7 @@ The following features can be enabled to include support for different encodings
 - `simd-json` (default): Enables support for `application/json` encoding using `simd-json`.
 - `cbor` (default): Enables support for `application/cbor` encoding using `cbor4ii`.
 - `json`: Enables support for `application/json` encoding using `serde_json`.
+- `form-urlencoded`: Enables support for `application/x-www-form-urlencoded` encoding using `serde_urlencoded`.
 
 The following features enable the default content type when `Accept` header is missing or `Accept: */*` is present:
 - `default-json` (default): Assumes `application/json` as the default content type.
