@@ -1,3 +1,8 @@
+## 2025-07-02, Version v0.2.0
+### Commits
+- [[`9eab886257`](https://github.com/vipul43/axum-content-negotiation/commit/9eab886257dacc70cd56ac5db3804f2c48741959)] feat: add support for `application/x-www-urlencoded` content type & update depedencies (vipul43)
+- [[`03ec8232cd`](https://github.com/vipul43/axum-content-negotiation/commit/03ec8232cd5af1a267ea30b31fd78f278726e15f)] chore: Update the changelog (vipul43)
+
 ## 2025-05-16, Version v0.1.3
 ### Commits
 - [[`e6eca94052`](https://github.com/bltavares/axum-content-negotiation/commit/e6eca940521d44df9dfc799f0934fdd291c88615)] chore: Release axum-content-negotiation version 0.1.3 (Bruno Tavares)
