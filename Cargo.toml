@@ -3,7 +3,7 @@ name = "axum-content-negotiation"
 description = "Axum middleware to use Accept and Content-Type headers to serialize with different formats"
 keywords = ["axum-middleware", "middleware", "content-negotiation"]
 
-version = "0.1.3"
+version = "0.1.4"
 edition = "2021"
 
 authors = ["Bruno Tavares <connect+github@bltavares.com>"]
