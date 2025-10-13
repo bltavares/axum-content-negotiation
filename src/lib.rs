@@ -83,12 +83,20 @@ where
     type Rejection = Response;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let accept = req
+        let content_type = req
             .headers()
             .get(CONTENT_TYPE)
             .unwrap_or(&DEFAULT_CONTENT_TYPE);
 
-        match accept.as_bytes() {
+        // The header may include a charset or other info after `;`, if so, ignore it
+        let content_type = content_type
+            .as_bytes()
+            .split(|b| *b == b';')
+            .next()
+            .map(|bytes| bytes.trim_ascii())
+            .unwrap_or(b"");
+
+        match content_type {
             #[cfg(feature = "simd-json")]
             b"application/json" => {
                 let mut body = Bytes::from_request(req, state)
@@ -137,7 +145,7 @@ where
             }
 
             _ => {
-                tracing::error!("unsupported accept header: {:?}", accept);
+                tracing::error!("unsupported content-type header: {:?}", content_type);
                 Err((
                     StatusCode::NOT_ACCEPTABLE,
                     "Invalid content type on request",
@@ -553,6 +561,34 @@ mod test {
                         Request::builder()
                             .uri("/")
                             .header(CONTENT_TYPE, "application/json")
+                            .method("POST")
+                            .body(json!({ "message": "test" }).to_string())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Hello, test!"
+                );
+            }
+
+            #[tokio::test]
+            async fn test_can_read_input_with_charset_in_header() {
+                #[axum::debug_handler]
+                async fn handler(Negotiate(input): Negotiate<Example>) -> impl IntoResponse {
+                    format!("Hello, {}!", input.message)
+                }
+
+                let app = Router::new().route("/", post(handler));
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .header(CONTENT_TYPE, "application/json; charset=utf-8")
                             .method("POST")
                             .body(json!({ "message": "test" }).to_string())
                             .unwrap(),
