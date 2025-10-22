@@ -1,3 +1,24 @@
+## 2025-10-22, Version v0.1.4
+### Commits
+- [[`5ecae54df9`](https://github.com/bltavares/axum-content-negotiation/commit/5ecae54df92da5143f3da09a2cd240919b64aa0b)] chore: Release axum-content-negotiation version 0.1.4 (Bruno Tavares)
+- [[`da28f59bb4`](https://github.com/bltavares/axum-content-negotiation/commit/da28f59bb43781f4d37ce05b09bdda833fb2d985)] Address some pedantic lints (Bruno Tavares)
+- [[`19cc011cdc`](https://github.com/bltavares/axum-content-negotiation/commit/19cc011cdc1b6a6ba64acfe3bcd0720c4f776017)] Merge branch 'notNotDaniel-allow-content-type-charset' (Bruno Tavares)
+- [[`8184611076`](https://github.com/bltavares/axum-content-negotiation/commit/81846110761c71de696433cc42a4c1c160b22f91)] Change the test case to include additional whitespace, so we can validate the trim logic (Bruno Tavares)
+- [[`5eb0774dd5`](https://github.com/bltavares/axum-content-negotiation/commit/5eb0774dd5491a6be1221b805a14ff734e8ce336)] Avoid split operations on byte arrays (Bruno Tavares)
+- [[`9262c55b65`](https://github.com/bltavares/axum-content-negotiation/commit/9262c55b650e52475957953be926a5b875ccc02f)] support content-type headers which include a charset specification (Daniel Keller)
+- [[`d3a4038a98`](https://github.com/bltavares/axum-content-negotiation/commit/d3a4038a9865e350324acf9b30450f296a833496)] Update the changelog (Bruno Tavares)
+
+### Stats
+```diff
+ CHANGELOG.md | 22 ++++++++++++++++++++++
+ Cargo.lock   |  2 +-
+ Cargo.toml   |  2 +-
+ Makefile     |  4 ++++
+ src/lib.rs   | 58 +++++++++++++++++++++++++++++++++++++++++++++++-----------
+ 5 files changed, 75 insertions(+), 13 deletions(-)
+```
+
+
 ## 2025-05-16, Version v0.1.3
 ### Commits
 - [[`e6eca94052`](https://github.com/bltavares/axum-content-negotiation/commit/e6eca940521d44df9dfc799f0934fdd291c88615)] chore: Release axum-content-negotiation version 0.1.3 (Bruno Tavares)
