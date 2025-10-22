@@ -86,19 +86,19 @@ where
         let content_type = req
             .headers()
             .get(CONTENT_TYPE)
-            .unwrap_or(&DEFAULT_CONTENT_TYPE);
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or(&DEFAULT_CONTENT_TYPE_VALUE);
 
         // The header may include a charset or other info after `;`, if so, ignore it
         let content_type = content_type
-            .as_bytes()
-            .split(|b| *b == b';')
+            .split(";")
             .next()
-            .map(|bytes| bytes.trim_ascii())
-            .unwrap_or(b"");
+            .map(|bytes| bytes.trim())
+            .unwrap_or_default();
 
         match content_type {
             #[cfg(feature = "simd-json")]
-            b"application/json" => {
+            "application/json" => {
                 let mut body = Bytes::from_request(req, state)
                     .await
                     .map_err(|e| {
@@ -115,7 +115,7 @@ where
                 Ok(Self(body))
             }
             #[cfg(feature = "json")]
-            b"application/json" => {
+            "application/json" => {
                 let body = Bytes::from_request(req, state).await.map_err(|e| {
                     tracing::error!(error = %e, "failed to ready request body as bytes");
                     e.into_response()
@@ -130,7 +130,7 @@ where
             }
 
             #[cfg(feature = "cbor")]
-            b"application/cbor" => {
+            "application/cbor" => {
                 let body = Bytes::from_request(req, state).await.map_err(|e| {
                     tracing::error!(error = %e, "failed to ready request body as bytes");
                     e.into_response()
