@@ -83,14 +83,22 @@ where
     type Rejection = Response;
 
     async fn from_request(req: Request, state: &S) -> Result<Self, Self::Rejection> {
-        let accept = req
+        let content_type = req
             .headers()
             .get(CONTENT_TYPE)
-            .unwrap_or(&DEFAULT_CONTENT_TYPE);
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or(&DEFAULT_CONTENT_TYPE_VALUE);
 
-        match accept.as_bytes() {
+        // The header may include a charset or other info after `;`, if so, ignore it
+        let content_type = content_type
+            .split(";")
+            .next()
+            .map(|bytes| bytes.trim())
+            .unwrap_or_default();
+
+        match content_type {
             #[cfg(feature = "simd-json")]
-            b"application/json" => {
+            "application/json" => {
                 let mut body = Bytes::from_request(req, state)
                     .await
                     .map_err(|e| {
@@ -107,7 +115,7 @@ where
                 Ok(Self(body))
             }
             #[cfg(feature = "json")]
-            b"application/json" => {
+            "application/json" => {
                 let body = Bytes::from_request(req, state).await.map_err(|e| {
                     tracing::error!(error = %e, "failed to ready request body as bytes");
                     e.into_response()
@@ -122,7 +130,7 @@ where
             }
 
             #[cfg(feature = "cbor")]
-            b"application/cbor" => {
+            "application/cbor" => {
                 let body = Bytes::from_request(req, state).await.map_err(|e| {
                     tracing::error!(error = %e, "failed to ready request body as bytes");
                     e.into_response()
@@ -137,7 +145,7 @@ where
             }
 
             _ => {
-                tracing::error!("unsupported accept header: {:?}", accept);
+                tracing::error!("unsupported content-type header: {:?}", content_type);
                 Err((
                     StatusCode::NOT_ACCEPTABLE,
                     "Invalid content type on request",
@@ -553,6 +561,34 @@ mod test {
                         Request::builder()
                             .uri("/")
                             .header(CONTENT_TYPE, "application/json")
+                            .method("POST")
+                            .body(json!({ "message": "test" }).to_string())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+
+                assert_eq!(response.status(), 200);
+                assert_eq!(
+                    response.into_body().collect().await.unwrap().to_bytes(),
+                    "Hello, test!"
+                );
+            }
+
+            #[tokio::test]
+            async fn test_can_read_input_with_charset_in_header() {
+                #[axum::debug_handler]
+                async fn handler(Negotiate(input): Negotiate<Example>) -> impl IntoResponse {
+                    format!("Hello, {}!", input.message)
+                }
+
+                let app = Router::new().route("/", post(handler));
+
+                let response = app
+                    .oneshot(
+                        Request::builder()
+                            .uri("/")
+                            .header(CONTENT_TYPE, "application/json;    charset=utf-8")
                             .method("POST")
                             .body(json!({ "message": "test" }).to_string())
                             .unwrap(),
