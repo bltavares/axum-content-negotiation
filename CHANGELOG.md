@@ -1,3 +1,19 @@
+## 2025-10-22, Version v0.1.5
+### Commits
+- [[`9778c63acf`](https://github.com/bltavares/axum-content-negotiation/commit/9778c63acfe8d08ba456c7c10a8556fec4f51fd5)] chore: Release axum-content-negotiation version 0.1.5 (Bruno Tavares)
+- [[`a9623e2750`](https://github.com/bltavares/axum-content-negotiation/commit/a9623e2750dac375b469a4dc4f5b4b46aefe5d8e)] Merge pull request #9 from bltavares/bump-deps (Bruno Tavares)
+- [[`86c6fd047f`](https://github.com/bltavares/axum-content-negotiation/commit/86c6fd047fefee9006a4fbbc068ddc95d90d3ab9)] Bump dependencies to their latest releases (Bruno Tavares)
+- [[`42ba7ce126`](https://github.com/bltavares/axum-content-negotiation/commit/42ba7ce126007c475df45f7e3628c8f9c4349234)] Update changelog (Bruno Tavares)
+
+### Stats
+```diff
+ CHANGELOG.md |  21 ++-
+ Cargo.lock   | 545 ++++++++++++++++++++++--------------------------------------
+ Cargo.toml   |  32 ++--
+ 3 files changed, 237 insertions(+), 361 deletions(-)
+```
+
+
 ## 2025-10-22, Version v0.1.4
 ### Commits
 - [[`5ecae54df9`](https://github.com/bltavares/axum-content-negotiation/commit/5ecae54df92da5143f3da09a2cd240919b64aa0b)] chore: Release axum-content-negotiation version 0.1.4 (Bruno Tavares)
