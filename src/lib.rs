@@ -588,7 +588,7 @@ mod test {
                     .oneshot(
                         Request::builder()
                             .uri("/")
-                            .header(CONTENT_TYPE, "application/json; charset=utf-8")
+                            .header(CONTENT_TYPE, "application/json;    charset=utf-8")
                             .method("POST")
                             .body(json!({ "message": "test" }).to_string())
                             .unwrap(),
