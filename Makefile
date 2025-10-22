@@ -31,6 +31,8 @@ check:
 .PHONY: check
 
 # Run all tests
+#
+# uses cargo-run-bin to pin libs
 test:
 	cargo bin cargo-nextest run --all
 	cargo bin cargo-nextest run --all --no-default-features --features json,default-json
@@ -43,6 +45,8 @@ doc:
 .PHONY: doc
 
 # Generate new entry for CHANGELOG.md
+#
+# uses cargo-run-bin to pin libs
 changelog:
 	cargo bin changelog -o CHANGELOG.md
 .PHONY: changelog

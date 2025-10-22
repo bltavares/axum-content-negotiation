@@ -44,7 +44,7 @@ static MALFORMED_RESPONSE: (StatusCode, &str) = (StatusCode::BAD_REQUEST, "Malfo
 /// When used as an [Extract](axum::extract::FromRequest), it will attempt to deserialize the request body into the target type based on the `Content-Type` header.
 /// When used as a [Response](axum::response::IntoResponse), it will attempt to serialize the target type into the response body based on the `Accept` header.
 ///
-/// For the [Response](axum::response::IntoResponse) case, the [NegotiateLayer] must be used to wrap the service in order to acctually perform the serialization.
+/// For the [Response](axum::response::IntoResponse) case, the [`NegotiateLayer`] must be used to wrap the service in order to acctually perform the serialization.
 /// If the [Layer](tower::Layer) is not used, the response will be an 415 Unsupported Media Type error.
 ///
 /// ## Example
@@ -71,7 +71,7 @@ pub struct Negotiate<T>(
     pub T,
 );
 
-/// [Negotiate] implements [FromRequest] if the target type is deserializable.
+/// [Negotiate] implements [`FromRequest`] if the target type is deserializable.
 ///
 /// It will attempt to deserialize the request body based on the `Content-Type` header.
 /// If the `Content-Type` header is not supported, it will return a 415 Unsupported Media Type response without running the handler.
@@ -87,13 +87,13 @@ where
             .headers()
             .get(CONTENT_TYPE)
             .and_then(|h| h.to_str().ok())
-            .unwrap_or(&DEFAULT_CONTENT_TYPE_VALUE);
+            .unwrap_or(DEFAULT_CONTENT_TYPE_VALUE);
 
         // The header may include a charset or other info after `;`, if so, ignore it
         let content_type = content_type
-            .split(";")
+            .split(';')
             .next()
-            .map(|bytes| bytes.trim())
+            .map(str::trim)
             .unwrap_or_default();
 
         match content_type {
@@ -171,9 +171,9 @@ where
     }
 }
 
-/// [Negotiate] implements [IntoResponse] if the internal content is serialiazable.
+/// [Negotiate] implements [`IntoResponse`] if the internal content is serialiazable.
 ///
-/// It will return convert it to a 415 Unsupported Media Type by default, which will be converted to the right response status on the [NegotiateLayer].
+/// It will return convert it to a 415 Unsupported Media Type by default, which will be converted to the right response status on the [`NegotiateLayer`].
 impl<T> IntoResponse for Negotiate<T>
 where
     T: serde::Serialize + Send + Sync + 'static,
